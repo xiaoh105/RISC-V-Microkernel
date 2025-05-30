@@ -1,13 +1,13 @@
 use core::panic::PanicInfo;
 use crate::drivers::misc::{system_reset, SystemResetOp};
-use crate::println;
+use crate::red_msg;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {
-        println!("Panicked at {}: {} {}", location.file(), location.line(), info.message());
+        red_msg!("Panicked at {}: {} {}", location.file(), location.line(), info.message());
     } else {
-        println!("Panicked at {}", info.message());
+        red_msg!("Panicked at {}", info.message());
     }
     unsafe {
         system_reset(SystemResetOp::ShutdownError);

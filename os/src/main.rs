@@ -5,11 +5,19 @@ mod lang_items;
 mod drivers;
 mod config;
 mod io;
+mod sync;
+mod batch;
+mod trap;
+mod syscall;
 
-use core::arch::global_asm;
+use core::arch::{asm, global_asm};
+use riscv::register::{mepc, mstatus, pmpaddr0, pmpcfg0, satp};
+use riscv::register::mstatus::MPP;
+use riscv::register::satp::Satp;
 use crate::drivers::uart::UartPort;
 
 global_asm!(include_str!("asm/entry.asm"));
+global_asm!(include_str!("asm/link_app.asm"));
 
 unsafe fn clear_bss() {
     unsafe extern "C" {
@@ -22,13 +30,34 @@ unsafe fn clear_bss() {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe fn sbi_entry() -> ! {
+    unsafe {
+        mstatus::set_mpp(MPP::Supervisor);
+        mepc::write(rust_main as usize);
+        satp::write(Satp::from_bits(0));
+        pmpaddr0::write(0x3fffffffffffffusize);
+        pmpcfg0::write(0xf);
+        asm!(
+        "csrw mideleg, {mideleg}", // some bits could not be set by this method
+        "csrw medeleg, {medeleg}",
+        medeleg = in(reg) !0,
+        mideleg = in(reg) !0,
+        );
+        asm!("mret", options(noreturn))
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe fn rust_main() -> ! {
     init_uart();
     unsafe {
         clear_bss();
     }
-    println!("Hello, world!");
-    panic!("Shutdown machine!");
+    unsafe { trap::init_trap(); }
+    green_msg!("[kernel] Trap info correctly set.");
+    batch::init();
+    green_msg!("[kernel] BatchOS initialized.");
+    unsafe { batch::run_next_app(); }
 }
 
 pub fn init_uart() {

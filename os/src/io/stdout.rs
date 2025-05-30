@@ -20,7 +20,7 @@ pub fn print(args: fmt::Arguments) {
 #[macro_export]
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
-        print(format_args!($fmt $(, $($arg)+)?));
+        $crate::io::stdout::print(format_args!($fmt $(, $($arg)+)?));
     }
 }
 
@@ -33,8 +33,29 @@ macro_rules! println {
 }
 
 #[macro_export]
+macro_rules! red_msg {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        $crate::io::stdout::print(format_args!(concat!("\x1B[31m", $fmt, "\x1B[0m\n") $(, $($arg)+)?));
+    }
+}
+
+#[macro_export]
 macro_rules! green_msg {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::io::stdout::print(format_args!(concat!("\x1B[32m", $fmt, "\x1B[0m\n") $(, $($arg)+)?));
+    }
+}
+
+#[macro_export]
+macro_rules! yellow_msg {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        $crate::io::stdout::print(format_args!(concat!("\x1B[33m", $fmt, "\x1B[0m\n") $(, $($arg)+)?));
+    }
+}
+
+#[macro_export]
+macro_rules! blue_msg {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        $crate::io::stdout::print(format_args!(concat!("\x1B[34m", $fmt, "\x1B[0m\n") $(, $($arg)+)?));
     }
 }
