@@ -38,10 +38,10 @@ pub unsafe fn sbi_entry() -> ! {
         pmpaddr0::write(0x3fffffffffffffusize);
         pmpcfg0::write(0xf);
         asm!(
-        "csrw mideleg, {mideleg}", // some bits could not be set by this method
-        "csrw medeleg, {medeleg}",
-        medeleg = in(reg) !0,
-        mideleg = in(reg) !0,
+            "csrw mideleg, {mideleg}",
+            "csrw medeleg, {medeleg}",
+            medeleg = in(reg) !0,
+            mideleg = in(reg) !0,
         );
         asm!("mret", options(noreturn))
     }

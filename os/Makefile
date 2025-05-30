@@ -4,15 +4,13 @@ build:
 build_release:
 	cargo build --release
 
-build_user:
-	cd ../user && make build
-
 remove_metadata: build_release
 	~/.cargo/bin/rust-objcopy --strip-all target/riscv64gc-unknown-none-elf/release/os \
 	  -O binary target/riscv64gc-unknown-none-elf/release/os.bin
-	  
 
-build_all: remove_metadata build_user
+
+build_all: remove_metadata
+	cd ../user && make build
 
 qemu_start: build_all
 	qemu-system-riscv64 \
