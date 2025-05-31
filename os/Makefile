@@ -1,21 +1,19 @@
 OS_FILE := $(shell find . -path "./target" -prune -o -type f)
 USER_FILE := $(shell find ../user -path "../user/target" -prune -o -type f)
 OS_ELF := target/riscv64gc-unknown-none-elf/release/os
+OS_BIN := target/riscv64gc-unknown-none-elf/release/os.bin
 
-build: $(OS_FILE)
-	cargo build
-
-build_release: $(OS_FILE)
+$(OS_ELF): build_user $(OS_FILE)
 	cargo build --release
 
 build_user: $(USER_FILE)
 	cd ../user && make build
 
-remove_metadata: $(OS_ELF)
+$(OS_BIN): $(OS_ELF)
 	~/.cargo/bin/rust-objcopy --strip-all target/riscv64gc-unknown-none-elf/release/os \
 	  -O binary target/riscv64gc-unknown-none-elf/release/os.bin
 
-build_all: build_release remove_metadata build_user
+build_all: $(OS_BIN)
 
 qemu_start: build_all
 	qemu-system-riscv64 \

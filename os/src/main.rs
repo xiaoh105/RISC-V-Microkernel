@@ -6,15 +6,18 @@ mod drivers;
 mod config;
 mod io;
 mod sync;
-mod batch;
 mod trap;
 mod syscall;
+mod loader;
+mod task;
 
 use core::arch::{asm, global_asm};
 use riscv::register::{mepc, mstatus, pmpaddr0, pmpcfg0, satp};
 use riscv::register::mstatus::MPP;
 use riscv::register::satp::Satp;
 use crate::drivers::uart::UartPort;
+use crate::loader::load_apps;
+use crate::task::run_first_task;
 
 global_asm!(include_str!("asm/entry.asm"));
 global_asm!(include_str!("asm/link_app.asm"));
@@ -55,9 +58,9 @@ pub unsafe fn rust_main() -> ! {
     }
     unsafe { trap::init_trap(); }
     green_msg!("[kernel] Trap info correctly set.");
-    batch::init();
-    green_msg!("[kernel] BatchOS initialized.");
-    unsafe { batch::run_next_app(); }
+    load_apps();
+    green_msg!("[kernel] All apps loaded.");
+    run_first_task();
 }
 
 pub fn init_uart() {

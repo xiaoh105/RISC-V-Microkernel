@@ -3,9 +3,9 @@ use riscv::interrupt::{Exception, Trap, Interrupt};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::{scause, stval, stvec};
 use riscv::register::stvec::Stvec;
-use crate::batch::run_next_app;
 use crate::red_msg;
 use crate::syscall::syscall;
+use crate::task::exit_current_and_run_next;
 use crate::trap::context::TrapContext;
 
 pub mod context;
@@ -35,11 +35,11 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
             red_msg!("[kernel] Page fault in application. Kernel killed it.");
-            unsafe { run_next_app(); }
+            exit_current_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             red_msg!("[kernel] Illegal instruction in application. Kernel killed it.");
-            unsafe { run_next_app(); }
+            exit_current_and_run_next();
         }
         _ => {
             panic!("Unsupported trap {:?}, trap {:#x}!", scause.cause(), stval);
