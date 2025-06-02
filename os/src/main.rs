@@ -10,14 +10,16 @@ mod trap;
 mod syscall;
 mod loader;
 mod task;
+mod timer;
 
 use core::arch::{asm, global_asm};
-use riscv::register::{mepc, mstatus, pmpaddr0, pmpcfg0, satp};
+use riscv::register::{mepc, mstatus, pmpaddr0, pmpcfg0, satp, sie, sstatus};
 use riscv::register::mstatus::MPP;
 use riscv::register::satp::Satp;
 use crate::drivers::uart::UartPort;
 use crate::loader::load_apps;
 use crate::task::run_first_task;
+use crate::timer::init_timer;
 
 global_asm!(include_str!("asm/entry.asm"));
 global_asm!(include_str!("asm/link_app.asm"));
@@ -40,6 +42,7 @@ pub unsafe fn sbi_entry() -> ! {
         satp::write(Satp::from_bits(0));
         pmpaddr0::write(0x3fffffffffffffusize);
         pmpcfg0::write(0xf);
+        init_timer();
         asm!(
             "csrw mideleg, {mideleg}",
             "csrw medeleg, {medeleg}",
@@ -60,6 +63,12 @@ pub unsafe fn rust_main() -> ! {
     green_msg!("[kernel] Trap info correctly set.");
     load_apps();
     green_msg!("[kernel] All apps loaded.");
+    unsafe {
+        sstatus::set_sie();
+        sie::set_stimer();
+        sie::set_sext();
+        sie::set_ssoft();
+    }
     run_first_task();
 }
 

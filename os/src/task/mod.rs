@@ -90,7 +90,7 @@ impl TaskManager {
     
     pub fn find_next_task(&self) -> Option<usize> {
         let inner = self.inner.exclusive_access();
-        let mut current = inner.current_task;
+        let mut current = (inner.current_task + 1) % MAX_APP_NUM;
         for _ in 0..self.num_app {
             if inner.tasks[current].task_status == TaskStatus::Ready {
                 return Some(current);

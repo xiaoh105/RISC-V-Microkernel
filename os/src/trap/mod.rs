@@ -1,11 +1,11 @@
 use core::arch::global_asm;
 use riscv::interrupt::{Exception, Trap, Interrupt};
 use riscv::register::mtvec::TrapMode;
-use riscv::register::{scause, stval, stvec};
+use riscv::register::{scause, sip, stval, stvec};
 use riscv::register::stvec::Stvec;
 use crate::red_msg;
 use crate::syscall::syscall;
-use crate::task::exit_current_and_run_next;
+use crate::task::{exit_current_and_run_next, suspend_current_and_run_next};
 use crate::trap::context::TrapContext;
 
 pub mod context;
@@ -29,6 +29,10 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     let scause = scause::read();
     let stval = stval::read();
     match scause.cause().try_into::<Interrupt, Exception>().unwrap() {
+        Trap::Interrupt(Interrupt::SupervisorSoft) => {
+            unsafe { sip::clear_ssoft(); }
+            suspend_current_and_run_next();
+        }
         Trap::Exception(Exception::UserEnvCall) => {
             cx.sepc += 4;
             cx.reg[10] = syscall(cx.reg[17], [cx.reg[10], cx.reg[11], cx.reg[12]]) as usize;
