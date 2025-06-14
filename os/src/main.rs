@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 
 mod lang_items;
 mod drivers;
@@ -11,6 +12,8 @@ mod syscall;
 mod loader;
 mod task;
 mod timer;
+mod utils;
+mod mem;
 
 use core::arch::{asm, global_asm};
 use riscv::register::{mepc, mstatus, pmpaddr0, pmpcfg0, satp, sie, sstatus};
@@ -18,6 +21,7 @@ use riscv::register::mstatus::MPP;
 use riscv::register::satp::Satp;
 use crate::drivers::uart::UartPort;
 use crate::loader::load_apps;
+use crate::mem::heap_allocator::{heap_test, init_heap};
 use crate::task::run_first_task;
 use crate::timer::init_timer;
 
@@ -61,6 +65,10 @@ pub unsafe fn rust_main() -> ! {
     }
     unsafe { trap::init_trap(); }
     green_msg!("[kernel] Trap info correctly set.");
+    unsafe { init_heap(); }
+    green_msg!("[kernel] Kernel heap initialized.");
+    heap_test();
+    green_msg!("[kernel] Heap test passed!.");
     load_apps();
     green_msg!("[kernel] All apps loaded.");
     unsafe {
