@@ -3,7 +3,7 @@ use core::cell::UnsafeCell;
 use core::cmp::{max, min};
 use core::mem::size_of;
 use core::ptr::NonNull;
-use crate::{green_msg, yellow_msg};
+use crate::{green_msg, println, yellow_msg};
 use crate::utils::spinlock::SpinLock;
 
 pub struct BuddyAllocator<const ORDER: usize> {
@@ -114,7 +114,7 @@ impl<const ORDER: usize> BuddyAllocator<ORDER> {
             panic!("Allocation size({} bytes) too large. Please increase your ORDER.", size);
         }
         for i in order..ORDER {
-            if let Some(addr) = unsafe { self.pop_front(order) } {
+            if let Some(addr) = unsafe { self.pop_front(i) } {
                 for j in order..i {
                     unsafe { self.insert_block(addr + (1 << j), j); }
                 }
@@ -124,10 +124,11 @@ impl<const ORDER: usize> BuddyAllocator<ORDER> {
                 if let Some(ptr) = NonNull::new(addr as *mut u8) {
                     return Ok(ptr);
                 } else {
-                    return Err(());
+                    panic!("Memory in kernel buddy allocator should not be 0!");
                 }
             }
         }
+        self.report();
         Err(())
     }
     
@@ -135,7 +136,7 @@ impl<const ORDER: usize> BuddyAllocator<ORDER> {
         let size = max(size_of::<usize>(), max(layout.size().next_power_of_two(), layout.align()));
         let order = size.trailing_zeros() as usize;
         let mut addr = ptr.addr().get();
-        for i in order..ORDER {
+        'outer: for i in order..ORDER {
             if i == ORDER - 1 {
                 unsafe { self.insert_block(addr, i); }
                 break;
@@ -159,7 +160,7 @@ impl<const ORDER: usize> BuddyAllocator<ORDER> {
                         *(prev as *mut usize) = *(cur as *const usize);
                     }
                     addr = min(addr, buddy);
-                    continue;
+                    continue 'outer;
                 }
                 prev = cur;
                 cur = unsafe { *(cur as *const usize) };

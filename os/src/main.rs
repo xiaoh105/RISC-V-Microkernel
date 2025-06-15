@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
+extern crate alloc;
 
 mod lang_items;
 mod drivers;
@@ -21,7 +22,9 @@ use riscv::register::mstatus::MPP;
 use riscv::register::satp::Satp;
 use crate::drivers::uart::UartPort;
 use crate::loader::load_apps;
+use crate::mem::frame_allocator::{frame_allocator_test, init_frame_allocator};
 use crate::mem::heap_allocator::{heap_test, init_heap};
+use crate::mem::memory_set::KERNEL_SPACE;
 use crate::task::run_first_task;
 use crate::timer::init_timer;
 
@@ -69,6 +72,11 @@ pub unsafe fn rust_main() -> ! {
     green_msg!("[kernel] Kernel heap initialized.");
     heap_test();
     green_msg!("[kernel] Heap test passed!.");
+    unsafe { init_frame_allocator(); }
+    green_msg!("[kernel] Frame allocator initialized.");
+    frame_allocator_test();
+    green_msg!("[kernel] Frame allocator test passed!");
+    KERNEL_SPACE.exclusive_access().activate();
     load_apps();
     green_msg!("[kernel] All apps loaded.");
     unsafe {

@@ -8,3 +8,4 @@ volatile = "0.6.1"
 bitflags = "2.9.1"
 lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
 riscv = "0.13.0"
+xmas-elf = "0.10.0"
