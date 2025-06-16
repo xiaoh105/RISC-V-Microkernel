@@ -5,7 +5,7 @@ extern crate alloc;
 
 mod lang_items;
 mod drivers;
-mod config;
+pub mod config;
 mod io;
 mod sync;
 mod trap;
@@ -21,10 +21,9 @@ use riscv::register::{mepc, mstatus, pmpaddr0, pmpcfg0, satp, sie, sstatus};
 use riscv::register::mstatus::MPP;
 use riscv::register::satp::Satp;
 use crate::drivers::uart::UartPort;
-use crate::loader::load_apps;
 use crate::mem::frame_allocator::{frame_allocator_test, init_frame_allocator};
 use crate::mem::heap_allocator::{heap_test, init_heap};
-use crate::mem::memory_set::KERNEL_SPACE;
+use crate::mem::memory_set::{remap_test, KERNEL_SPACE};
 use crate::task::run_first_task;
 use crate::timer::init_timer;
 
@@ -66,21 +65,21 @@ pub unsafe fn rust_main() -> ! {
     unsafe {
         clear_bss();
     }
-    unsafe { trap::init_trap(); }
-    green_msg!("[kernel] Trap info correctly set.");
     unsafe { init_heap(); }
     green_msg!("[kernel] Kernel heap initialized.");
     heap_test();
-    green_msg!("[kernel] Heap test passed!.");
+    green_msg!("[kernel] Heap test passed!");
     unsafe { init_frame_allocator(); }
     green_msg!("[kernel] Frame allocator initialized.");
     frame_allocator_test();
     green_msg!("[kernel] Frame allocator test passed!");
     KERNEL_SPACE.exclusive_access().activate();
-    load_apps();
-    green_msg!("[kernel] All apps loaded.");
+    green_msg!("[kernel] Kernel space initiaied");
+    remap_test();
+    green_msg!("[kernel] Remap test passed!");
+    unsafe { trap::init_trap(); }
+    green_msg!("[kernel] Trap info set correctly.");
     unsafe {
-        sstatus::set_sie();
         sie::set_stimer();
         sie::set_sext();
         sie::set_ssoft();

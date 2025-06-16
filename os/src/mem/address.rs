@@ -105,7 +105,14 @@ impl From<usize> for VirtAddr {
 }
 
 impl From<VirtPageNum> for VirtAddr {
-    fn from(val: VirtPageNum) -> Self { Self(val.0 & ((1 << PAGE_WIDTH) - 1)) }
+    fn from(val: VirtPageNum) -> Self { Self(val.0 << PAGE_WIDTH) }
+}
+
+impl From<VirtAddr> for VirtPageNum {
+    fn from(val: VirtAddr) -> Self { 
+        assert_eq!(val.page_offset(), 0); 
+        val.floor()
+    }
 }
 
 impl From<VirtAddr> for usize {

@@ -9,10 +9,7 @@ BINS := $(patsubst $(APP_DIR)/%.rs, $(TARGET_DIR)/%.bin, $(APPS))
 OBJDUMP := ~/.cargo/bin/rust-objdump --arch-name=riscv64
 OBJCOPY := ~/.cargo/bin/rust-objcopy --binary-architecture=riscv64
 
-elf: $(USER_FILE) build.py
-	@python3 build.py
+elf: $(USER_FILE)
+	cargo build --release
 
-$(TARGET_DIR)/%.bin: $(TARGET_DIR)/%
-	$(OBJCOPY) $(TARGET_DIR)/$* --strip-all -O binary $@
-
-build: elf $(BINS)
+build: elf

@@ -1,11 +1,13 @@
 use lazy_static::lazy_static;
+use alloc::vec::Vec;
 use crate::{blue_msg, green_msg};
-use crate::config::MAX_APP_NUM;
-use crate::loader::init_app_cx;
+use crate::drivers::misc::{system_reset, SystemResetOp};
+use crate::loader::get_app_data;
 use crate::sync::up::UPSafeCell;
 use crate::task::context::TaskContext;
 use crate::task::switch::__switch;
 use crate::task::task::{TaskControlBlock, TaskStatus};
+use crate::trap::context::TrapContext;
 
 pub mod context;
 mod switch;
@@ -17,7 +19,7 @@ pub struct TaskManager {
 }
 
 pub struct TaskManagerInner {
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     current_task: usize
 }
 
@@ -33,16 +35,11 @@ pub fn get_app_num() -> usize {
 lazy_static! {
     pub static ref TASK_MANAGER: TaskManager = {
         let num_app = get_app_num();
-        let mut tasks = [
-            TaskControlBlock {
-                task_status: TaskStatus::UnInit,
-                task_cx: TaskContext::zero_init()
-            };
-            MAX_APP_NUM
-        ];
+        let mut tasks: Vec<TaskControlBlock> = Vec::new();
         for i in 0..num_app {
-            tasks[i].task_cx = TaskContext::goto_restore(init_app_cx(i));
-            tasks[i].task_status = TaskStatus::Ready;
+            unsafe {
+                tasks.push(TaskControlBlock::new(get_app_data(i),i));
+            }
         }
         green_msg!("[kernel] All task context initialized");
         TaskManager {
@@ -90,7 +87,7 @@ impl TaskManager {
     
     pub fn find_next_task(&self) -> Option<usize> {
         let inner = self.inner.exclusive_access();
-        let mut current = (inner.current_task + 1) % MAX_APP_NUM;
+        let mut current = (inner.current_task + 1) % get_app_num();
         for _ in 0..self.num_app {
             if inner.tasks[current].task_status == TaskStatus::Ready {
                 return Some(current);
@@ -113,7 +110,8 @@ impl TaskManager {
                 __switch(current_task_cx_ptr, next_task_cx_ptr);
             }
         } else {
-            panic!("All applications completed!");
+            green_msg!("All applications completed!");
+            unsafe { system_reset(SystemResetOp::ShutdownNormal); }
         }
     }
     
@@ -130,4 +128,24 @@ impl TaskManager {
         }
         unreachable!()
     }
+
+    fn get_current_token(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_user_token()
+    }
+    
+    fn get_current_trap_cx(&self) -> &mut TrapContext {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_trap_cx()
+    }
+}
+
+pub fn current_user_token() -> usize {
+    TASK_MANAGER.get_current_token()
+}
+
+pub fn current_trap_cx() -> &'static mut TrapContext {
+    TASK_MANAGER.get_current_trap_cx()
 }

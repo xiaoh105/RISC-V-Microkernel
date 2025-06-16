@@ -7,10 +7,10 @@ use alloc::sync::Arc;
 use riscv::register::satp;
 use riscv::register::satp::Satp;
 use crate::blue_msg;
-use crate::config::MEMORY_END;
-use crate::mem::address::{PhysPageNum, StepByOne, VPNRange, VirtAddr, VirtPageNum, PAGE_SIZE};
+use crate::config::{MEMORY_END, SYSTEM_RESET_BASE_ADDR, TIMER_ADDR, TRAMPOLINE, TRAP_CONTEXT, UART_BASE_ADDR};
+use crate::mem::address::{PageTableEntry, PhysAddr, PhysPageNum, StepByOne, VPNRange, VirtAddr, VirtPageNum, PAGE_SIZE};
 use crate::mem::frame_allocator::{frame_alloc, FrameTracker};
-use crate::mem::memory_set::MapType::Framed;
+use crate::mem::memory_set::MapType::{Identical, Framed};
 use crate::mem::page_table::{PTEFlags, PageTable};
 use crate::sync::up::UPSafeCell;
 
@@ -21,10 +21,10 @@ pub enum MapType {
 
 bitflags! {
     pub struct MapPermission: u8 {
-        const R = 1 << 0;
-        const W = 1 << 1;
-        const X = 1 << 2;
-        const U = 1 << 3;
+        const R = 1 << 1;
+        const W = 1 << 2;
+        const X = 1 << 3;
+        const U = 1 << 4;
     }
 }
 
@@ -48,8 +48,8 @@ lazy_static! {
 
 impl MapArea {
     pub fn new(start_va: VirtAddr, end_va: VirtAddr, map_type: MapType, map_permission: MapPermission) -> Self {
-        let start_vpn: VirtPageNum = start_va.ceil();
-        let end_vpn: VirtPageNum = end_va.floor();
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
@@ -60,10 +60,10 @@ impl MapArea {
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
-            MapType::Identical => {
+            Identical => {
                 ppn = PhysPageNum(vpn.0);
             }
-            MapType::Framed => {
+            Framed => {
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
@@ -79,8 +79,8 @@ impl MapArea {
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         match self.map_type {
-            MapType::Identical => {}
-            MapType::Framed => {
+            Identical => {}
+            Framed => {
                 self.data_frames.remove(&vpn);
             }
         }
@@ -139,40 +139,57 @@ impl MemorySet {
         memory_set.push(MapArea::new(
             (stext as usize).into(),
             (etext as usize).into(),
-            MapType::Identical,
+            Identical,
             MapPermission::R | MapPermission::X)
         , None);
         memory_set.push(MapArea::new(
             (srodata as usize).into(),
             (erodata as usize).into(),
-            MapType::Identical,
+            Identical,
             MapPermission::R)
         , None);
         memory_set.push(MapArea::new(
             (sdata as usize).into(),
             (edata as usize).into(),
-            MapType::Identical,
+            Identical,
             MapPermission::R | MapPermission::W)
         , None);
         memory_set.push(MapArea::new(
             (sbss_with_stack as usize).into(),
             (ebss as usize).into(),
-            MapType::Identical,
+            Identical,
             MapPermission::R | MapPermission::W)
         , None);
         memory_set.push(MapArea::new(
             (ekernel as usize).into(),
             MEMORY_END.into(),
-            MapType::Identical,
+            Identical,
             MapPermission::R | MapPermission::W)
         , None);
+        memory_set.push(MapArea::new(
+            UART_BASE_ADDR.into(),
+            (UART_BASE_ADDR + PAGE_SIZE - 1).into(),
+            Identical,
+            MapPermission::R | MapPermission::W
+        ), None);
+        memory_set.push(MapArea::new(
+            TIMER_ADDR.into(),
+            (TIMER_ADDR + PAGE_SIZE - 1).into(),
+            Identical,
+            MapPermission::R | MapPermission::W
+        ), None);
+        memory_set.push(MapArea::new(
+            SYSTEM_RESET_BASE_ADDR.into(),
+            (SYSTEM_RESET_BASE_ADDR + PAGE_SIZE - 1).into(),
+            Identical,
+            MapPermission::R | MapPermission::W
+        ), None);
         memory_set
     }
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
         memory_set.map_trampoline();
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
-        let elf_header = elf.header;
         assert_eq!(elf.header.pt1.magic, [0x7f, 0x45, 0x4c, 0x46], "Invalid ELF file");
         let ph_count = elf.header.pt2.ph_count();
         let mut max_end_vpn = VirtPageNum(0);
@@ -196,7 +213,7 @@ impl MemorySet {
             );
         }
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let user_stack_bottom: usize = max_end_va.into() + PAGE_SIZE;
+        let user_stack_bottom: usize = usize::from(max_end_va) + PAGE_SIZE;
         let user_stack_top: usize = user_stack_bottom + PAGE_SIZE;
         memory_set.push(MapArea::new(
             user_stack_bottom.into(),
@@ -225,6 +242,12 @@ impl MemorySet {
     ) {
         self.push(MapArea::new(start_va, end_va, Framed, permission), None);
     }
+    pub fn translate(&self, va: VirtPageNum) -> Option<PageTableEntry> {
+        self.page_table.translate(va)
+    }
+    pub fn token(&self) -> usize {
+        self.page_table.token()
+    }
     pub fn activate(&self) {
         let satp_val = Satp::from_bits(self.page_table.token());
         unsafe {
@@ -232,5 +255,30 @@ impl MemorySet {
             asm!("sfence.vma");
         }
     }
-    pub fn map_trampoline(&mut self);
+    pub fn map_trampoline(&mut self) {
+        self.page_table.map(
+            VirtAddr::from(TRAMPOLINE).into(),
+            PhysAddr::from(strampoline as usize).into(),
+            PTEFlags::R | PTEFlags::X
+        );
+    }
+}
+
+pub fn remap_test() {
+    let kernel_space = KERNEL_SPACE.exclusive_access();
+    let mid_text: VirtAddr = ((stext as usize + etext as usize) / 2).into();
+    let mid_rodata: VirtAddr = ((srodata as usize + erodata as usize) / 2).into();
+    let mid_data: VirtAddr = ((sdata as usize + edata as usize) / 2).into();
+    assert_eq!(
+        kernel_space.page_table.translate(mid_text.floor()).unwrap().writable(),
+        false
+    );
+    assert_eq!(
+        kernel_space.page_table.translate(mid_rodata.floor()).unwrap().writable(),
+        false,
+    );
+    assert_eq!(
+        kernel_space.page_table.translate(mid_data.floor()).unwrap().executable(),
+        false,
+    );
 }
