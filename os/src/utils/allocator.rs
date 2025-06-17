@@ -3,7 +3,7 @@ use core::cell::UnsafeCell;
 use core::cmp::{max, min};
 use core::mem::size_of;
 use core::ptr::NonNull;
-use crate::{green_msg, println, yellow_msg};
+use crate::{green_msg, yellow_msg};
 use crate::utils::spinlock::SpinLock;
 
 pub struct BuddyAllocator<const ORDER: usize> {

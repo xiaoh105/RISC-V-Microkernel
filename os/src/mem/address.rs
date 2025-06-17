@@ -75,6 +75,11 @@ impl PhysAddr {
     pub fn page_offset(&self) -> usize { self.0 & (PAGE_SIZE - 1) }
     pub fn floor(&self) -> PhysPageNum { PhysPageNum(self.0 >> PAGE_WIDTH) }
     pub fn ceil(&self) -> PhysPageNum { PhysPageNum((self.0 + PAGE_SIZE - 1) >> PAGE_WIDTH) }
+    pub fn get_mut<T>(&self) -> &'static mut T {
+        unsafe {
+            (self.0 as *mut T).as_mut().unwrap()
+        }
+    }
 }
 
 impl PhysPageNum {
@@ -112,6 +117,12 @@ impl From<VirtAddr> for VirtPageNum {
     fn from(val: VirtAddr) -> Self { 
         assert_eq!(val.page_offset(), 0); 
         val.floor()
+    }
+}
+
+impl From<usize> for VirtPageNum {
+    fn from(val: usize) -> Self {
+        Self(val & ((1 << VPN_WIDTH) - 1))
     }
 }
 

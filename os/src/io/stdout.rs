@@ -1,16 +1,20 @@
 use core::fmt;
 use core::fmt::Write;
-use crate::drivers::uart::UartPort;
+use crate::drivers::uart::{read, write};
 
 pub struct Stdout;
 
 impl Write for Stdout {
     fn write_str(&mut self, s: &str) -> Result<(), core::fmt::Error> {
         for c in s.bytes() {
-            UartPort.send(c);
+            write(c);
         }
         Ok(())
     }
+}
+
+pub fn getchar() -> u8 {
+    read()
 }
 
 pub fn print(args: fmt::Arguments) {

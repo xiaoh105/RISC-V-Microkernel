@@ -1,8 +1,11 @@
+use alloc::collections::VecDeque;
 use core::ptr::NonNull;
 use volatile::VolatilePtr;
 use volatile::access::*;
 use bitflags::bitflags;
+use lazy_static::lazy_static;
 use crate::config::UART_BASE_ADDR;
+use crate::sync::up::UPSafeCell;
 
 macro_rules! wait_for {
     ($cond: expr) => {
@@ -16,7 +19,17 @@ pub struct ReadPort;
 
 pub struct WritePort;
 
-pub struct UartPort;
+pub struct UartPort {
+    buffer: VecDeque<u8>
+}
+
+lazy_static! {
+    pub static ref UART: UPSafeCell<UartPort> = unsafe {
+        UPSafeCell::new(UartPort{
+            buffer: VecDeque::new()
+        })
+    };
+}
 
 bitflags! {
     #[derive(Clone, Copy)]
@@ -176,5 +189,40 @@ impl UartPort {
         } else {
             self.wait_and_send(data);
         }
+    }
+
+    pub fn recv(&self) -> Option<u8> {
+        let lsr = &ReadPort::LSR;
+        let rbr = &ReadPort::RBR;
+        /*if (lsr.read() & LineStatus::DATA_AVAILABLE).bits() != 0 {
+            Some(rbr.read())
+        } else {
+            None
+        }*/
+        while ((lsr.read() & LineStatus::DATA_AVAILABLE).bits() == 0) {
+            
+        }
+        Some(rbr.read())
+    }
+}
+
+pub fn read() -> u8 {
+    /*loop {
+        if let Some(ch) = UART.exclusive_access().buffer.pop_front() {
+            return ch;
+        }
+        suspend_current_and_run_next()
+    }*/
+    UART.exclusive_access().recv().unwrap()
+}
+
+pub fn write(data: u8) {
+    UART.exclusive_access().send(data);
+}
+
+pub fn handle_irq() {
+    let mut uart = UART.exclusive_access();
+    while let Some(data) = uart.recv() {
+        uart.buffer.push_back(data);
     }
 }

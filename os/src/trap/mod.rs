@@ -4,9 +4,12 @@ use riscv::register::mtvec::TrapMode;
 use riscv::register::{scause, sip, stval, stvec};
 use riscv::register::stvec::Stvec;
 use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
+use crate::drivers::misc::{system_reset, SystemResetOp};
+use crate::drivers::uart::handle_irq;
 use crate::{println, red_msg};
 use crate::syscall::syscall;
-use crate::task::{current_trap_cx, current_user_token, exit_current_and_run_next, suspend_current_and_run_next};
+use crate::task::{exit_current_and_run_next, suspend_current_and_run_next};
+use crate::task::processor::{current_trap_cx, current_user_token};
 use crate::trap::context::TrapContext;
 
 pub mod context;
@@ -73,7 +76,7 @@ pub unsafe fn init_trap() {
 #[unsafe(no_mangle)]
 pub unsafe fn trap_handler(cx: &mut TrapContext) -> ! {
     set_kernel_trap_entry();
-    let cx = current_trap_cx();
+    let mut cx = current_trap_cx();
     let scause = scause::read();
     let stval = stval::read();
     match scause.cause().try_into::<Interrupt, Exception>().unwrap() {
@@ -81,17 +84,35 @@ pub unsafe fn trap_handler(cx: &mut TrapContext) -> ! {
             unsafe { sip::clear_ssoft(); }
             suspend_current_and_run_next();
         }
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            let sip = sip::read().bits();
+            unsafe {
+                asm! {"csrw sip, {sip}", sip = in(reg) sip ^ (1 << 9)};
+            }
+            handle_irq();
+        }
         Trap::Exception(Exception::UserEnvCall) => {
             cx.sepc += 4;
-            cx.reg[10] = syscall(cx.reg[17], [cx.reg[10], cx.reg[11], cx.reg[12]]) as usize;
+            let res = syscall(cx.reg[17], [cx.reg[10], cx.reg[11], cx.reg[12]]) as usize;
+            cx = current_trap_cx();
+            cx.reg[10] = res;
         }
-        Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
-            red_msg!("[kernel] Page fault in application. Kernel killed it.");
-            exit_current_and_run_next();
+        Trap::Exception(Exception::StoreFault) | 
+        Trap::Exception(Exception::StorePageFault) |
+        Trap::Exception(Exception::InstructionFault) |
+        Trap::Exception(Exception::InstructionPageFault) |
+        Trap::Exception(Exception::LoadFault) |
+        Trap::Exception(Exception::LoadPageFault) => {
+            red_msg!("[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, core dumped.",
+                scause.cause(),
+                stval,
+                current_trap_cx().sepc,
+            );
+            exit_current_and_run_next(-2);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             red_msg!("[kernel] Illegal instruction in application. Kernel killed it.");
-            exit_current_and_run_next();
+            exit_current_and_run_next(-3);
         }
         _ => {
             panic!("Unsupported trap {:?}, trap {:#x}!", scause.cause(), stval);
